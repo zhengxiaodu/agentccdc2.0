@@ -82,8 +82,6 @@ async def generate_response(
         toolkit=toolkit,
     )
     
-    agent.set_console_output_enabled(False)
-    
     msgs = []
     for msg in messages:
         role = msg.get("role")
