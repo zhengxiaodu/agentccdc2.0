@@ -9,6 +9,7 @@ from typing import List, Dict, Any, AsyncGenerator
 
 from agentscope.agent import Agent
 from agentscope.model import OpenAIChatModel
+from agentscope.credential import OpenAICredential
 
 # 加载.env文件中的环境变量
 load_dotenv()
@@ -59,11 +60,12 @@ async def generate_response(
     if not os.getenv("OPENAI_API_KEY"):
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY not set")
     
+    credential = OpenAICredential(api_key=os.getenv("OPENAI_API_KEY"))
     model = OpenAIChatModel(
-        model_name="gpt-4o",
-        api_key=os.getenv("OPENAI_API_KEY"),
+        credential=credential,
+        model="gpt-4o",
         stream=True,
-        generate_kwargs={"temperature": 0.3},
+        parameters=OpenAIChatModel.Parameters(temperature=0.3),
     )
     
     agent = Agent(
@@ -93,7 +95,7 @@ async def generate_response(
             text_content = str(content)
         
         if role == "user":
-            msgs.append(UserMsg(text_content))
+            msgs.append(UserMsg("用户", text_content))
         elif role == "assistant":
             msgs.append(Msg("AI问答助手", text_content, "assistant"))
     
