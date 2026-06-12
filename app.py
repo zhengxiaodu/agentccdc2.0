@@ -1,5 +1,6 @@
 import os
 import yaml
+from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -8,6 +9,9 @@ from typing import List, Dict, Any, AsyncGenerator
 
 from agentscope.agent import Agent
 from agentscope.model import OpenAIChatModel
+
+# 加载.env文件中的环境变量
+load_dotenv()
 from agentscope.tool import Toolkit
 from agentscope.skill import LocalSkillLoader
 from agentscope.message import UserMsg, Msg
