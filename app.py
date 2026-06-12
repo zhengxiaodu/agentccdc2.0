@@ -31,16 +31,22 @@ class ChatResponse(BaseModel):
 
 def load_skills(config_path: str) -> Toolkit:
     """加载技能配置，初始化Toolkit"""
-    skill_loaders = []
+    tools = []
     
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
     
     for skill in config.get("skills", []):
-        if "directory" in skill:
-            skill_loaders.append(LocalSkillLoader(skill["directory"]))
+        if "module" in skill and "function" in skill:
+            import importlib
+            module = importlib.import_module(skill["module"])
+            func = getattr(module, skill["function"])
+            tools.append(func)
+        elif "directory" in skill:
+            loader = LocalSkillLoader(skill["directory"])
+            tools.append(loader)
     
-    return Toolkit(skills_or_loaders=skill_loaders)
+    return Toolkit(tools=tools)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

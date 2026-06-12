@@ -1,5 +1,5 @@
 ---
-name: bocha-search
+name: bocha_search
 description: 使用博查搜索引擎获取网上的知识和最新信息。适用于查询新闻、科技资讯、天气预报、股票行情等需要实时数据的场景。当用户询问最新消息、实时信息、网络搜索相关内容时使用此技能。
 license: Apache-2.0
 compatibility: Requires Python 3.10+ and aiohttp library

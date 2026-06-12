@@ -1,15 +1,15 @@
 import os
 import aiohttp
-from agentscope.tool import ToolChunk
+from agentscope.tool import FunctionTool, ToolChunk
 
 BOCHA_API_KEY = "sk-b2456820150d48a68c15a0f76ded1eef"
 BOCHA_API_URL = "https://api.bocha.com/v1/search"
 
-async def bocha_search_tool(query: str) -> ToolChunk:
+async def bocha_search(query: str) -> ToolChunk:
     """使用博查搜索获取网上的知识。
 
     Args:
-        query (str): 搜索查询词
+        query: 搜索查询词
     """
     headers = {
         "Authorization": f"Bearer {BOCHA_API_KEY}",
@@ -41,3 +41,9 @@ async def bocha_search_tool(query: str) -> ToolChunk:
         content = f"搜索异常: {str(e)}"
     
     return ToolChunk(text=content)
+
+bocha_search_tool = FunctionTool(
+    func=bocha_search,
+    name="bocha_search",
+    description="使用博查搜索引擎获取网上的知识和最新信息。适用于查询新闻、科技资讯、天气预报、股票行情等需要实时数据的场景。"
+)
