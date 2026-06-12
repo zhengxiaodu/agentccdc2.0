@@ -1,0 +1,10 @@
+skills:
+  - name: bocha_search
+    module: skills.bocha_search
+    function: bocha_search_tool
+    description: "使用博查搜索获取网上的知识，适用于查询最新信息、新闻、科技资讯等"
+    parameters:
+      query:
+        type: string
+        description: "搜索查询词"
+        required: true
