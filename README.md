@@ -67,14 +67,61 @@ Content-Type: application/json
 
 ## 技能配置
 
-技能配置文件位于 `config/skill_config.yml`，格式如下：
+技能配置文件位于 `config/skill_config.yml`，支持两种配置方式：
 
+### 方式1：技能目录（推荐）
 ```yaml
 skills:
-  - name: skill_name
-    module: module.path
-    function: function_name
-    description: "技能描述"
+  - name: bocha_search
+    directory: skills/bocha_search
+    description: "使用博查搜索引擎获取网上的知识和最新信息"
+```
+
+### 方式2：单个工具函数
+```yaml
+skills:
+  - name: custom_tool
+    module: skills.custom
+    function: custom_function
+    description: "自定义工具描述"
+```
+
+## 技能目录结构
+
+每个技能是一个目录，必须包含 `SKILL.md` 文件：
+
+```
+skills/
+└── bocha_search/
+    ├── SKILL.md           # 技能描述文件（必需）
+    └── bocha_search.py   # 技能实现代码
+```
+
+### SKILL.md 格式
+
+SKILL.md 文件包含 YAML frontmatter 和 Markdown 指令：
+
+```markdown
+---
+name: skill-name
+description: 技能描述，告知Agent何时使用此技能
+license: Apache-2.0
+compatibility: Requires Python 3.10+
+metadata:
+  author: 作者
+  version: "1.0"
+---
+
+# 技能名称
+
+## 功能说明
+...
+
+## 使用方法
+...
+
+## 注意事项
+...
 ```
 
 ## 项目结构
@@ -84,7 +131,9 @@ skills:
 ├── config/
 │   └── skill_config.yml      # 技能配置文件
 ├── skills/
-│   └── bocha_search.py       # 博查搜索技能
+│   └── bocha_search/         # 博查搜索技能目录
+│       ├── SKILL.md          # 技能描述文件
+│       └── bocha_search.py   # 技能实现代码
 ├── requirements.txt          # 依赖清单
 ├── .env.example              # 环境变量示例
 └── README.md                 # 项目说明

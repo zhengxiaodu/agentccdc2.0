@@ -1,10 +1,4 @@
 skills:
   - name: bocha_search
-    module: skills.bocha_search
-    function: bocha_search_tool
-    description: "使用博查搜索获取网上的知识，适用于查询最新信息、新闻、科技资讯等"
-    parameters:
-      query:
-        type: string
-        description: "搜索查询词"
-        required: true
+    directory: skills/bocha_search
+    description: "使用博查搜索引擎获取网上的知识和最新信息。适用于查询新闻、科技资讯、天气预报、股票行情等需要实时数据的场景。"
