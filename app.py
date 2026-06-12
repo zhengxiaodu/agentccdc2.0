@@ -13,7 +13,7 @@ from agentscope.credential import OpenAICredential
 
 # 加载.env文件中的环境变量
 load_dotenv()
-from agentscope.tool import Toolkit
+from agentscope.tool import Toolkit, Bash
 from agentscope.skill import LocalSkillLoader
 from agentscope.message import UserMsg, Msg
 
@@ -32,6 +32,7 @@ class ChatResponse(BaseModel):
 def load_skills(config_path: str) -> Toolkit:
     """加载技能配置，初始化Toolkit"""
     tools = []
+    skill_loaders = []
     
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
@@ -43,10 +44,11 @@ def load_skills(config_path: str) -> Toolkit:
             func = getattr(module, skill["function"])
             tools.append(func)
         elif "directory" in skill:
-            loader = LocalSkillLoader(skill["directory"])
-            tools.append(loader)
+            skill_loaders.append(skill["directory"])
     
-    return Toolkit(tools=tools)
+    tools.append(Bash())
+    
+    return Toolkit(tools=tools, skills_or_loaders=skill_loaders)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

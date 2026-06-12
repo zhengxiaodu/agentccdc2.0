@@ -1,8 +1,8 @@
 ---
 name: bocha_search
-description: 使用博查搜索引擎获取网上的知识和最新信息。适用于查询新闻、科技资讯、天气预报、股票行情等需要实时数据的场景。当用户询问最新消息、实时信息、网络搜索相关内容时使用此技能。
+description: 使用博查搜索引擎获取网上的知识和最新信息。当用户询问最新消息、实时信息、网络搜索相关内容时使用此技能。
 license: Apache-2.0
-compatibility: Requires Python 3.10+ and aiohttp library
+compatibility: Requires curl installed
 metadata:
   author: AI Assistant
   version: "1.0"
@@ -17,63 +17,64 @@ metadata:
 
 ## 功能说明
 
-本技能通过博查搜索API获取互联网上的最新知识和信息。它可以帮助用户查询：
-- 最新新闻和资讯
-- 科技动态和技术文章
-- 天气预报和实时数据
-- 股票行情和市场信息
-- 百科知识和定义
-- 任何需要从网络获取的信息
+本技能通过博查搜索API获取互联网上的最新知识和信息。
 
 ## 使用方法
 
-当用户提出需要获取最新信息的问题时，调用 `bocha_search_tool` 函数。
+当用户需要获取实时信息时，使用 bash 工具执行以下 curl 命令：
 
-### 输入参数
+```bash
+curl -s -X POST https://api.bocha.com/v1/search \
+  -H "Authorization: Bearer sk-b2456820150d48a68c15a0f76ded1eef" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "搜索关键词", "limit": 5}'
+```
 
-| 参数 | 类型 | 必填 | 描述 |
-|------|------|------|------|
-| query | string | 是 | 搜索查询词，应简洁明了 |
+### 参数说明
 
-### 返回结果
+| 参数 | 说明 |
+|------|------|
+| query | 用户的搜索关键词 |
+| limit | 返回结果数量，建议 5-10 |
 
-函数返回一个文本块，包含搜索结果的标题、摘要和来源链接。
+### 输出示例
+
+```json
+{
+  "results": [
+    {
+      "title": "文章标题",
+      "summary": "文章摘要",
+      "url": "来源链接"
+    }
+  ]
+}
+```
 
 ## 使用示例
 
-### 示例1：搜索新闻
+### 示例1：搜索科技新闻
 ```
 用户: 今天有什么科技新闻？
-Agent: (调用 bocha_search_tool，query="科技新闻")
-结果: 返回最新的科技新闻列表
+Agent: 使用 bash 工具执行：
+curl -s -X POST https://api.bocha.com/v1/search \
+  -H "Authorization: Bearer sk-b2456820150d48a68c15a0f76ded1eef" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "科技新闻", "limit": 5}'
 ```
 
 ### 示例2：查询实时信息
 ```
 用户: 比特币现在价格多少？
-Agent: (调用 bocha_search_tool，query="比特币价格")
-结果: 返回最新的比特币价格信息
-```
-
-### 示例3：搜索知识
-```
-用户: 解释一下什么是量子计算
-Agent: (调用 bocha_search_tool，query="量子计算解释")
-结果: 返回量子计算相关的百科知识和最新进展
+Agent: 使用 bash 工具执行：
+curl -s -X POST https://api.bocha.com/v1/search \
+  -H "Authorization: Bearer sk-b2456820150d48a68c15a0f76ded1eef" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "比特币价格", "limit": 3}'
 ```
 
 ## 注意事项
 
-1. **简洁查询**：查询词应简洁明了，避免过长的句子
-2. **实时信息**：本技能适合获取实时信息，但结果可能受API限制
-3. **来源验证**：返回结果包含来源链接，可供用户进一步查阅
-4. **适度使用**：避免对同一问题进行重复搜索
-
-## 错误处理
-
-如果搜索失败，函数会返回错误信息，包括：
-- 网络连接错误
-- API调用失败
-- 无搜索结果
-
-遇到错误时，请向用户说明情况并建议其他解决方案。
+1. 查询词应简洁明了
+2. 返回结果包含 JSON 格式数据，需要解析后用自然语言回复用户
+3. 如果网络错误，应向用户说明情况
