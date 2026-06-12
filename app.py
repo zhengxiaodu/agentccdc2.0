@@ -99,11 +99,11 @@ async def generate_response(
         elif role == "assistant":
             msgs.append(Msg("AI问答助手", text_content, "assistant"))
     
-    async for response in agent(msgs):
-        if hasattr(response, 'content') and response.content:
-            for block in response.content:
-                if hasattr(block, 'text') and block.text:
-                    yield f"data: {block.text}\n\n"
+    async for event in agent.reply_stream(msgs):
+        if hasattr(event, 'text') and event.text:
+            yield f"data: {event.text}\n\n"
+        elif hasattr(event, 'content') and event.content:
+            yield f"data: {event.content}\n\n"
     
     yield "data: [DONE]\n\n"
 
