@@ -67,23 +67,13 @@ Content-Type: application/json
 
 ## 技能配置
 
-技能配置文件位于 `config/skill_config.yml`，支持两种配置方式：
+技能配置文件位于 `config/skill_config.yml`：
 
-### 方式1：技能目录（推荐）
 ```yaml
 skills:
   - name: bocha_search
     directory: skills/bocha_search
     description: "使用博查搜索引擎获取网上的知识和最新信息"
-```
-
-### 方式2：单个工具函数
-```yaml
-skills:
-  - name: custom_tool
-    module: skills.custom
-    function: custom_function
-    description: "自定义工具描述"
 ```
 
 ## 技能目录结构

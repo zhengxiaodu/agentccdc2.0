@@ -1,6 +1,5 @@
 import os
 import yaml
-import importlib
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -9,7 +8,7 @@ from typing import List, Dict, Any, AsyncGenerator
 
 from agentscope.agent import Agent
 from agentscope.model import OpenAIChatModel
-from agentscope.tool import Toolkit, FunctionTool
+from agentscope.tool import Toolkit
 from agentscope.skill import LocalSkillLoader
 from agentscope.message import UserMsg, Msg
 
@@ -28,31 +27,15 @@ class ChatResponse(BaseModel):
 def load_skills(config_path: str) -> Toolkit:
     """加载技能配置，初始化Toolkit"""
     skill_loaders = []
-    tools = []
     
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
     
     for skill in config.get("skills", []):
-        # 如果配置了directory字段，使用技能目录方式加载
         if "directory" in skill:
             skill_loaders.append(LocalSkillLoader(skill["directory"]))
-        # 否则使用FunctionTool方式加载单个函数
-        elif "module" in skill and "function" in skill:
-            module_name = skill["module"]
-            function_name = skill["function"]
-            
-            module = importlib.import_module(module_name)
-            func = getattr(module, function_name)
-            
-            tool = FunctionTool(
-                func=func,
-                name=skill.get("name", function_name),
-                description=skill.get("description", ""),
-            )
-            tools.append(tool)
     
-    return Toolkit(tools=tools, skills_or_loaders=skill_loaders)
+    return Toolkit(skills_or_loaders=skill_loaders)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
