@@ -1,41 +1,41 @@
+# -*- coding: utf-8 -*-
+"""基于 AgentScope 2.0 官方方式实现的 AI 问答服务."""
 import os
-import yaml
-from dotenv import load_dotenv
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from typing import List, Dict, Any, AsyncGenerator
 
+import uvicorn
+from fastapi.middleware import Middleware
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Body
+from pydantic import BaseModel
+from dotenv import load_dotenv
+
+# 加载环境变量
+load_dotenv()
+
+from agentscope.app import create_app
+from agentscope.app.message_bus import RedisMessageBus
+from agentscope.app.storage import RedisStorage
+from agentscope.app.workspace_manager import LocalWorkspaceManager
+from agentscope.tool import Toolkit, Bash
+from agentscope.skill import LocalSkillLoader
 from agentscope.agent import Agent
 from agentscope.model import OpenAIChatModel
 from agentscope.credential import OpenAICredential
-
-# 加载.env文件中的环境变量
-load_dotenv()
-from agentscope.tool import Toolkit, Bash
-from agentscope.skill import LocalSkillLoader
 from agentscope.message import UserMsg, Msg
 
+# 技能配置路径
 SKILL_CONFIG_PATH = "config/skill_config.yml"
 
-class ChatRequest(BaseModel):
-    messages: List[Dict[str, Any]]
-    session_id: str = None
-    user_id: str = None
 
-class ChatResponse(BaseModel):
-    role: str
-    content: str
-    session_id: str = None
-
-def load_skills(config_path: str) -> Toolkit:
-    """加载技能配置，初始化Toolkit"""
-    tools = []
-    skill_loaders = []
+def load_skills_from_config(config_path: str) -> dict:
+    """从配置文件加载技能配置"""
+    import yaml
     
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
+    
+    tools = []
+    skill_loaders = []
     
     for skill in config.get("skills", []):
         if "module" in skill and "function" in skill:
@@ -46,28 +46,17 @@ def load_skills(config_path: str) -> Toolkit:
         elif "directory" in skill:
             skill_loaders.append(skill["directory"])
     
+    # 添加 Bash 工具（用于执行 curl 命令等）
     tools.append(Bash())
     
-    return Toolkit(tools=tools, skills_or_loaders=skill_loaders)
+    return {
+        "tools": tools,
+        "skill_loaders": skill_loaders
+    }
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    app.state.toolkit = load_skills(SKILL_CONFIG_PATH)
-    print("Skills loaded successfully")
-    yield
 
-app = FastAPI(lifespan=lifespan)
-
-async def generate_response(
-    messages: List[Dict[str, Any]],
-    session_id: str = None,
-    user_id: str = None
-) -> AsyncGenerator[str, None]:
-    toolkit = app.state.toolkit
-    
-    if not os.getenv("OPENAI_API_KEY"):
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not set")
-    
+def create_custom_agent(toolkit: Toolkit):
+    """创建自定义代理"""
     credential = OpenAICredential(api_key=os.getenv("OPENAI_API_KEY"))
     model = OpenAIChatModel(
         credential=credential,
@@ -92,58 +81,116 @@ async def generate_response(
         toolkit=toolkit,
     )
     
-    msgs = []
-    for msg in messages:
-        role = msg.get("role")
-        content = msg.get("content", "")
-        
-        if isinstance(content, list):
-            text_content = "\n".join([c.get("text", "") for c in content if isinstance(c, dict)])
-        else:
-            text_content = str(content)
-        
-        if role == "user":
-            msgs.append(UserMsg("用户", text_content))
-        elif role == "assistant":
-            msgs.append(Msg("AI问答助手", text_content, "assistant"))
-    
-    async for event in agent.reply_stream(msgs):
-        if hasattr(event, 'text') and event.text:
-            yield f"data: {event.text}\n\n"
-        elif hasattr(event, 'content') and event.content:
-            yield f"data: {event.content}\n\n"
-    
-    yield "data: [DONE]\n\n"
+    return agent
 
+
+# 加载技能配置
+skill_config = load_skills_from_config(SKILL_CONFIG_PATH)
+
+# 创建 Toolkit
+toolkit = Toolkit(
+    tools=skill_config["tools"],
+    skills_or_loaders=skill_config["skill_loaders"]
+)
+
+# 创建应用
+app = create_app(
+    # 使用 Redis 作为存储
+    storage=RedisStorage(
+        host="localhost",
+        port=6379,
+    ),
+    message_bus=RedisMessageBus(
+        host="localhost",
+        port=6379,
+    ),
+    workspace_manager=LocalWorkspaceManager(
+        basedir=os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "workspaces",
+        ),
+    ),
+    extra_middlewares=[
+        Middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+        ),
+    ],
+)
+
+
+# 定义请求模型
+class ChatRequest(BaseModel):
+    messages: list[dict] = []
+    session_id: str = None
+    user_id: str = None
+
+# 添加自定义的 /chat 端点
 @app.post("/chat")
-async def chat(request: ChatRequest):
-    try:
-        return StreamingResponse(
-            generate_response(
-                messages=request.messages,
-                session_id=request.session_id,
-                user_id=request.user_id
-            ),
-            media_type="text/event-stream"
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+async def chat(request: ChatRequest = Body(...)):
+    """自定义聊天端点，支持流式响应"""
+    messages = request.messages
+    session_id = request.session_id
+    user_id = request.user_id
+    from fastapi.responses import StreamingResponse
+    from typing import AsyncGenerator
+    
+    async def generate_response() -> AsyncGenerator[str, None]:
+        agent = create_custom_agent(toolkit)
+        
+        msgs = []
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content", "")
+            
+            if isinstance(content, list):
+                text_content = "\n".join([c.get("text", "") for c in content if isinstance(c, dict)])
+            else:
+                text_content = str(content)
+            
+            if role == "user":
+                msgs.append(UserMsg("用户", text_content))
+            elif role == "assistant":
+                msgs.append(Msg("AI问答助手", text_content, "assistant"))
+        
+        async for event in agent.reply_stream(msgs):
+            if hasattr(event, 'text') and event.text:
+                yield f"data: {event.text}\n\n"
+            elif hasattr(event, 'content') and event.content:
+                yield f"data: {event.content}\n\n"
+        
+        yield "data: [DONE]\n\n"
+    
+    return StreamingResponse(
+        generate_response(),
+        media_type="text/event-stream"
+    )
+
 
 @app.get("/health")
 async def health():
-    if hasattr(app.state, 'toolkit'):
-        schemas = await app.state.toolkit.get_tool_schemas()
-        return {"status": "healthy", "skills_loaded": len(schemas)}
-    return {"status": "healthy", "skills_loaded": 0}
+    """健康检查端点"""
+    schemas = await toolkit.get_tool_schemas()
+    return {"status": "healthy", "skills_loaded": len(schemas)}
+
 
 @app.get("/skills")
 async def list_skills():
-    if not hasattr(app.state, 'toolkit'):
-        raise HTTPException(status_code=500, detail="Skills not loaded")
-    
-    schemas = await app.state.toolkit.get_tool_schemas()
+    """列出已加载的技能"""
+    schemas = await toolkit.get_tool_schemas()
     return {"skills": schemas}
 
+
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # 创建工作空间目录
+    os.makedirs("workspaces", exist_ok=True)
+    
+    # 启动服务
+    uvicorn.run(
+        "app:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+    )
