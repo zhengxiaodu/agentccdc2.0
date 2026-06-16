@@ -4,19 +4,12 @@
 models:
   default:
     provider: "openai"
-    model_name: "gpt-4o"
-    api_key_env: "OPENAI_API_KEY"
+    model_name: "deepseek-chat"
+    base_url: "https://api.deepseek.com/v1"
+    api_key: "sk-9ecbb0bb2b0d4e99ac0b1af97b3663fe"
     parameters:
       temperature: 0.3
       max_tokens: 4096
-
-  # 可以配置多个模型
-  qwen:
-    provider: "dashscope"
-    model_name: "qwen3-max"
-    api_key_env: "DASHSCOPE_API_KEY"
-    parameters:
-      temperature: 0.5
 
 # Agent 配置
 agent:
