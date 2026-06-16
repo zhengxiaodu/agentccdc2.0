@@ -24,10 +24,7 @@ metadata:
 当用户需要获取实时信息时，使用 bash 工具执行以下 curl 命令：
 
 ```bash
-curl -s -X POST https://api.bocha.com/v1/search \
-  -H "Authorization: Bearer sk-b2456820150d48a68c15a0f76ded1eef" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "搜索关键词", "limit": 5}'
+curl -s -X POST https://api.bocha.cn/v1/web-search -H "Content-Type: application/json" -H "Authorization: Bearer sk-b2456820150d48a68c15a0f76ded1eef" -d "{\"query\": \"搜索关键词\"}"
 ```
 
 ### 参数说明
@@ -41,13 +38,10 @@ curl -s -X POST https://api.bocha.com/v1/search \
 
 ```json
 {
-  "results": [
-    {
-      "title": "文章标题",
-      "summary": "文章摘要",
-      "url": "来源链接"
-    }
-  ]
+    "code": 200,
+    "log_id": "78642f86b75b6f3a",
+    "msg": null,
+    "data": {}
 }
 ```
 
@@ -57,20 +51,16 @@ curl -s -X POST https://api.bocha.com/v1/search \
 ```
 用户: 今天有什么科技新闻？
 Agent: 使用 bash 工具执行：
-curl -s -X POST https://api.bocha.com/v1/search \
-  -H "Authorization: Bearer sk-b2456820150d48a68c15a0f76ded1eef" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "科技新闻", "limit": 5}'
+curl -s -X POST https://api.bocha.cn/v1/web-search -H "Content-Type: application/json" -H "Authorization: Bearer sk-b2456820150d48a68c15a0f76ded1eef" -d "{\"query\": \"科技新闻\"}"
+
 ```
 
 ### 示例2：查询实时信息
 ```
 用户: 比特币现在价格多少？
 Agent: 使用 bash 工具执行：
-curl -s -X POST https://api.bocha.com/v1/search \
-  -H "Authorization: Bearer sk-b2456820150d48a68c15a0f76ded1eef" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "比特币价格", "limit": 3}'
+curl -s -X POST https://api.bocha.cn/v1/web-search -H "Content-Type: application/json" -H "Authorization: Bearer sk-b2456820150d48a68c15a0f76ded1eef" -d "{\"query\": \"今日比特币价格\"}"
+
 ```
 
 ## 注意事项
