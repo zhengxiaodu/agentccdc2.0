@@ -1,126 +1,127 @@
 # -*- coding: utf-8 -*-
-"""基于 AgentScope 2.0 官方方式实现的 AI 问答服务."""
-import os
-import yaml
+"""基于 AgentScope 2.0 官方的 agent_service 实现的 AI 问答服务。
 
+核心原则：
+1. 复用官方 create_app 的所有内置路由（chat、session、agent、credential 等）
+2. 大模型配置从 config/model_config.yml 读取（不通过 API 配置）
+3. 博查 skill 从 config/skill_config.yml 读取（不通过 API 配置）
+4. Redis 存储数据结构与官方完全一致
+"""
+import os
+
+import yaml
 import uvicorn
-from fastapi import FastAPI, Body, HTTPException, Header
 from fastapi.middleware import Middleware
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from fastapi import Request, HTTPException
 from dotenv import load_dotenv
 
-# 加载环境变量
 load_dotenv()
 
 from agentscope.app import create_app
-from agentscope.app.message_bus import RedisMessageBus
 from agentscope.app.storage import RedisStorage
+from agentscope.app.message_bus import RedisMessageBus
 from agentscope.app.workspace_manager import LocalWorkspaceManager
-from agentscope.tool import Toolkit, Bash
-from agentscope.agent import Agent
-from agentscope.model import OpenAIChatModel, DashScopeChatModel
-from agentscope.credential import OpenAICredential, DashScopeCredential
-from agentscope.message import UserMsg, Msg
-from agentscope.event import AgentEvent
+from agentscope.tool import ToolBase
 
-# 配置文件路径
+# ---------------------------------------------------------------------------
+# 配置路径
+# ---------------------------------------------------------------------------
 MODEL_CONFIG_PATH = "config/model_config.yml"
 SKILL_CONFIG_PATH = "config/skill_config.yml"
 
+# ---------------------------------------------------------------------------
+# 加载配置文件
+# ---------------------------------------------------------------------------
+with open(MODEL_CONFIG_PATH, encoding="utf-8") as f:
+    model_config = yaml.safe_load(f)
 
-def load_model_config(config_path: str) -> dict:
-    """加载模型配置"""
-    with open(config_path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+with open(SKILL_CONFIG_PATH, encoding="utf-8") as f:
+    skill_config = yaml.safe_load(f)
 
+# ---------------------------------------------------------------------------
+# 从 skill_config.yml 构建工具列表
+# ---------------------------------------------------------------------------
+_skill_tools: list[ToolBase] = []
 
-def load_skills_from_config(config_path: str) -> dict:
-    """从配置文件加载技能配置"""
-    with open(config_path, "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    
-    tools = []
-    skill_loaders = []
-    
-    for skill in config.get("skills", []):
-        if "module" in skill and "function" in skill:
-            import importlib
-            module = importlib.import_module(skill["module"])
-            func = getattr(module, skill["function"])
-            tools.append(func)
-        elif "directory" in skill:
-            skill_loaders.append(skill["directory"])
-    
-    # 添加 Bash 工具（用于执行 curl 命令等）
-    tools.append(Bash())
-    
-    return {
-        "tools": tools,
-        "skill_loaders": skill_loaders
-    }
+for skill in skill_config.get("skills", []):
+    name = skill.get("name", "")
+    # 方式1: module/function 格式
+    if "module" in skill and "function" in skill:
+        import importlib
 
+        module = importlib.import_module(skill["module"])
+        func = getattr(module, skill["function"])
+        if isinstance(func, ToolBase):
+            _skill_tools.append(func)
+        elif hasattr(func, "__call__"):
+            _skill_tools.append(func)
+    # 方式2: directory 格式 —— 从目录中的 .py 文件加载 ToolBase 实例
+    elif "directory" in skill:
+        import importlib.util
 
-def create_model_from_config(model_config: dict):
-    """根据配置创建模型实例"""
-    provider = model_config.get("provider", "openai")
-    model_name = model_config.get("model_name", "gpt-4o")
-    api_key_env = model_config.get("api_key_env", "OPENAI_API_KEY")
-    parameters = model_config.get("parameters", {})
-    
-    api_key = os.getenv(api_key_env)
-    if not api_key:
-        raise ValueError(f"环境变量 {api_key_env} 未设置")
-    
-    if provider == "openai":
-        credential = OpenAICredential(api_key=api_key)
-        model = OpenAIChatModel(
-            credential=credential,
-            model=model_name,
-            stream=True,
-            parameters=OpenAIChatModel.Parameters(**parameters),
-        )
-    elif provider == "dashscope":
-        credential = DashScopeCredential(api_key=api_key)
-        model = DashScopeChatModel(
-            credential=credential,
-            model=model_name,
-            stream=True,
-            parameters=DashScopeChatModel.Parameters(**parameters),
-        )
+        skill_dir = skill["directory"]
+        if not os.path.isabs(skill_dir):
+            skill_dir = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                skill_dir,
+            )
+        for fname in sorted(os.listdir(skill_dir)):
+            if fname.endswith(".py") and not fname.startswith("__"):
+                mod_path = os.path.join(skill_dir, fname)
+                mod_name = f"skill_{name}_{fname[:-3]}"
+                spec = importlib.util.spec_from_file_location(
+                    mod_name,
+                    mod_path,
+                )
+                if spec and spec.loader:
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    # 收集模块中所有 ToolBase 实例
+                    for attr_name in dir(mod):
+                        attr = getattr(mod, attr_name)
+                        if isinstance(attr, ToolBase):
+                            _skill_tools.append(attr)
     else:
-        raise ValueError(f"不支持的 provider: {provider}")
-    
-    return model
+        print(f"  [WARN] skill '{name}' has unknown format (neither module/function nor directory), skipped.")
 
 
-# 加载配置
-model_config = load_model_config(MODEL_CONFIG_PATH)
-skill_config = load_skills_from_config(SKILL_CONFIG_PATH)
+async def extra_agent_tools_factory(
+    user_id: str,
+    agent_id: str,
+    session_id: str,
+) -> list[ToolBase]:
+    """每次组装智能体时被调用，返回需要注入的额外工具。"""
+    return _skill_tools
 
-# 创建 Toolkit
-toolkit = Toolkit(
-    tools=skill_config["tools"],
-    skills_or_loaders=skill_config["skill_loaders"]
+
+# ---------------------------------------------------------------------------
+# 基础设施 —— 存储、消息总线、工作区管理器
+# ---------------------------------------------------------------------------
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+
+storage = RedisStorage(host=REDIS_HOST, port=REDIS_PORT)
+message_bus = RedisMessageBus(host=REDIS_HOST, port=REDIS_PORT)
+workspace_manager = LocalWorkspaceManager(
+    basedir=os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "workspaces",
+    ),
 )
 
-# 创建应用（使用官方方式）
+# ---------------------------------------------------------------------------
+# 创建 FastAPI 应用（使用官方 create_app）
+# 包含所有内置路由：
+#   POST /chat         触发一次 chat 运行
+#   GET  /sessions/{id}/stream  SSE 事件流
+#   GET/POST/PATCH/DELETE /agent, /sessions, /credential, /schedule, ...
+# ---------------------------------------------------------------------------
 app = create_app(
-    storage=RedisStorage(
-        host="localhost",
-        port=6379,
-    ),
-    message_bus=RedisMessageBus(
-        host="localhost",
-        port=6379,
-    ),
-    workspace_manager=LocalWorkspaceManager(
-        basedir=os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "workspaces",
-        ),
-    ),
+    storage=storage,
+    message_bus=message_bus,
+    workspace_manager=workspace_manager,
+    extra_agent_tools=extra_agent_tools_factory,
     extra_middlewares=[
         Middleware(
             CORSMiddleware,
@@ -132,103 +133,49 @@ app = create_app(
 )
 
 
-# 定义请求模型（复用官方 chat 接口格式）
-class ChatInput(BaseModel):
-    """用户输入消息"""
-    name: str = "用户"
-    role: str = "user"
-    content: list[dict]
-
-
-class ChatRequest(BaseModel):
-    """Chat 请求模型（复用官方格式）"""
-    agent_id: str = "default_agent"
-    session_id: str = None
-    input: ChatInput
-
-
-@app.post("/chat")
-async def chat(
-    request: ChatRequest = Body(...),
-    x_user_id: str = Header(None, alias="X-User-ID"),
-):
-    """
-    触发一次 chat 运行（复用官方接口格式）
-    模型和技能均从配置文件获取，不通过接口配置
-    """
-    # 获取默认模型配置
-    model_cfg = model_config.get("models", {}).get("default", {})
-    agent_cfg = model_config.get("agent", {})
-    
-    # 创建模型实例
-    model = create_model_from_config(model_cfg)
-    
-    # 创建 Agent
-    agent = Agent(
-        name=agent_cfg.get("name", "AI问答助手"),
-        system_prompt=agent_cfg.get("system_prompt", ""),
-        model=model,
-        toolkit=toolkit,
-    )
-    
-    # 解析用户输入
-    user_input = request.input
-    content_text = ""
-    for item in user_input.content:
-        if isinstance(item, dict) and item.get("type") == "text":
-            content_text += item.get("text", "") + "\n"
-    
-    # 构建消息
-    msgs = [UserMsg(user_input.name, content_text.strip())]
-    
-    # 流式响应生成
-    async def generate_response():
-        async for event in agent.reply_stream(msgs):
-            if isinstance(event, AgentEvent):
-                # 输出 AgentEvent 格式（与官方一致）
-                yield f"data: {event.model_dump_json()}\n\n"
-            elif hasattr(event, 'text') and event.text:
-                # 兼容旧格式
-                event_dict = {"type": "message", "text": event.text}
-                yield f"data: {yaml.dump(event_dict)}\n\n"
-            elif hasattr(event, 'content') and event.content:
-                event_dict = {"type": "message", "text": str(event.content)}
-                yield f"data: {yaml.dump(event_dict)}\n\n"
-        
-        # 发送结束标记
-        yield "data: {\"type\": \"end\"}\n\n"
-    
-    return StreamingResponse(
-        generate_response(),
-        media_type="text/event-stream"
-    )
-
-
+# ---------------------------------------------------------------------------
+# 自定义端点：健康检查
+# ---------------------------------------------------------------------------
 @app.get("/health")
 async def health():
-    """健康检查端点"""
-    schemas = await toolkit.get_tool_schemas()
-    return {"status": "healthy", "skills_loaded": len(schemas)}
+    """健康检查。"""
+    return {"status": "healthy"}
 
 
-@app.get("/skills")
-async def list_skills():
-    """列出已加载的技能"""
-    schemas = await toolkit.get_tool_schemas()
-    return {"skills": schemas}
+# ---------------------------------------------------------------------------
+# 自定义端点：查看当前配置（只读）
+# ---------------------------------------------------------------------------
+@app.get("/config")
+async def get_config():
+    """返回当前模型配置和技能配置（只读，不能通过 API 修改）。"""
+    return {
+        "model": model_config,
+        "skills": skill_config,
+    }
 
 
-@app.get("/config/model")
-async def get_model_config():
-    """获取当前模型配置（只读，不允许修改）"""
-    return model_config
-
-
+# ---------------------------------------------------------------------------
+# 启动入口
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    # 创建工作空间目录
     os.makedirs("workspaces", exist_ok=True)
-    
-    # 启动服务
+
+    print(
+        "=" * 60,
+        "AI 问答服务 - AgentScope 2.0",
+        "=" * 60,
+        sep="\n",
+    )
+    print()
+    print("服务端 API 端点：")
+    print("  POST /chat              触发聊天会话")
+    print("  GET  /sessions/{id}/stream  SSE 事件流")
+    print("  GET  /health            健康检查")
+    print("  GET  /config            查看配置")
+    print()
+    print("使用前请先运行:  python3 init_redis.py")
+    print()
+
     uvicorn.run(
         "app:app",
         host="0.0.0.0",
