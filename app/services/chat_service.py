@@ -1,0 +1,114 @@
+import os
+import yaml
+
+from agentscope.agent import Agent
+from agentscope.model import OpenAIChatModel
+from agentscope.credential import OpenAICredential
+from agentscope.message import UserMsg, AssistantMsg
+from agentscope.event import AgentEvent, ReplyStartEvent, ReplyEndEvent
+from agentscope.workspace import LocalWorkspace
+from agentscope.state import AgentState
+from agentscope.permission import PermissionContext, PermissionMode
+from agentscope.tool import Toolkit
+
+from app.config import SKILL_CONFIG_PATH, MODEL_CONFIG_PATH
+from fastapi import HTTPException
+from typing import List, Dict, Any, AsyncGenerator
+
+
+def load_model_config(config_path: str = MODEL_CONFIG_PATH) -> dict:
+    """加载模型配置"""
+    with open(config_path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+async def load_skills(config_path: str = SKILL_CONFIG_PATH) -> Toolkit:
+    """加载技能配置, 初始化 Toolkit"""
+    skill_loaders = []
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+
+    for skill in config.get("skills", []):
+        skill_loaders.append(skill["directory"])
+
+    workspace = LocalWorkspace(
+        workdir="./my-workspace",
+        default_mcps=[],
+        skill_paths=skill_loaders,
+    )
+    await workspace.initialize()
+
+    return Toolkit(tools=await workspace.list_tools(), skills_or_loaders=await workspace.list_skills())
+
+
+def create_model_from_config(model_config: dict):
+    """根据配置创建模型实例"""
+    provider = model_config.get("provider", "openai")
+    base_url = model_config.get("base_url", "https://api.deepseek.com/v1")
+    model_name = model_config.get("model_name", "deepseek-chat")
+    api_key = model_config.get("api_key", "OPENAI_API_KEY")
+    parameters = model_config.get("parameters", {})
+
+    if not api_key:
+        raise ValueError(f"环境变量未设置")
+
+    if provider == "openai":
+        credential = OpenAICredential(api_key=api_key, base_url=base_url)
+        model = OpenAIChatModel(
+            credential=credential,
+            model=model_name,
+            stream=True,
+            parameters=OpenAIChatModel.Parameters(**parameters),
+        )
+    else:
+        raise ValueError(f"不支持的 provider: {provider}")
+
+    return model
+
+
+async def generate_response(
+    toolkit: Toolkit,
+    model_config: dict,
+    messages: List[Dict[str, Any]],
+    session_id: str = None,
+    user_id: str = None,
+) -> AsyncGenerator[str, None]:
+    """根据消息列表生成流式回复。"""
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not set")
+
+    model_cfg = model_config.get("models", {}).get("default", {})
+    agent_cfg = model_config.get("agent", {})
+    model = create_model_from_config(model_cfg)
+
+    agent = Agent(
+        name=agent_cfg.get("name", "AI问答助手"),
+        system_prompt=agent_cfg.get("system_prompt", ""),
+        model=model,
+        toolkit=toolkit,
+        state=AgentState(
+            permission_context=PermissionContext(
+                mode=PermissionMode.BYPASS,
+            )
+        ),
+    )
+
+    apply = None
+    for msg in messages:
+        content = msg.get("content", "")
+
+        if isinstance(content, list):
+            text_content = "\n".join([c.get("text", "") for c in content if isinstance(c, dict)])
+        else:
+            text_content = str(content)
+
+        async for event in agent.reply_stream(UserMsg("user", text_content)):
+            if isinstance(event, ReplyStartEvent):
+                apply = AssistantMsg(name=event.name, content=[], id=event.reply_id)
+            elif isinstance(event, ReplyEndEvent):
+                print(apply)
+
+            if isinstance(event, AgentEvent):
+                apply.append_event(event)
+                yield f"data: {event.model_dump_json()}\n\n"
