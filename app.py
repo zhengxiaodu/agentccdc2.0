@@ -1,11 +1,15 @@
 import os
 import yaml
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List, Dict, Any, AsyncGenerator
+from typing import List, Dict, Any, Optional, AsyncGenerator
+
+import jwt
+import aiohttp
 
 from agentscope.agent import Agent
 from agentscope.model import OpenAIChatModel
@@ -26,17 +30,131 @@ load_dotenv()
 SKILL_CONFIG_PATH = "config/skill_config.yml"
 MODEL_CONFIG_PATH = "config/model_config.yml"
 
+JWT_ALGORITHM = "HS256"
+JWT_SECRET = os.getenv("JWT_SECRET", "please-change-this-secret")
+JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "8"))
+
 
 class ChatRequest(BaseModel):
     messages: List[Dict[str, Any]]
-    session_id: str = None
-    user_id: str = None
+    session_id: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
     role: str
     content: str
     session_id: str = None
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class UserInfo(BaseModel):
+    user_id: str
+    user_name: str
+    department: str
+    role: str
+
+
+class LoginResponse(BaseModel):
+    token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user_info: UserInfo
+    agent_access: List[str]
+    skills_blacklist: List[str]
+
+
+# 模拟账号数据,生产环境应改为调用第三方管理系统的真实接口
+_MOCK_USERS = {
+    "zhangsan": {
+        "password": "123456",
+        "verification": True,
+        "user_info": {"user_id": "123", "user_name": "小张", "department": "后勤部", "role": "普通用户"},
+        "agent_access": ["制度问答"],
+        "skills_blacklist": ["google"],
+    },
+    "admin": {
+        "password": "123456",
+        "verification": True,
+        "user_info": {"user_id": "1", "user_name": "管理员", "department": "管理部", "role": "管理员"},
+        "agent_access": ["制度问答", "通用问答"],
+        "skills_blacklist": [],
+    },
+}
+
+
+async def verify_login_with_external(username: str, password: str) -> dict:
+    """调用第三方管理系统验证登录凭据。
+
+    当 AUTH_MOCK=true 时使用内置模拟数据;否则请求 .env 中的 AUTH_API_URL。
+    返回结构须为:
+        {
+            "verification": bool,
+            "user_info": {"user_id", "user_name", "department", "role"},
+            "agent_access": [...],
+            "skills_blacklist": [...],
+        }
+    验证失败时仅返回 {"verification": False}。
+    """
+    if os.getenv("AUTH_MOCK", "true").lower() == "true":
+        user = _MOCK_USERS.get(username)
+        if user and user["password"] == password:
+            return {
+                "verification": True,
+                "user_info": user["user_info"],
+                "agent_access": user["agent_access"],
+                "skills_blacklist": user["skills_blacklist"],
+            }
+        return {"verification": False}
+
+    api_url = os.getenv("AUTH_API_URL")
+    api_key = os.getenv("AUTH_API_KEY")
+    if not api_url:
+        return {"verification": False}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                api_url,
+                json={"username": username, "password": password},
+                headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"verification": False}
+    except Exception as e:
+        print(f"[auth] 调用第三方认证服务失败: {e}")
+        return {"verification": False}
+
+
+def create_access_token(payload: dict, expire_hours: int = JWT_EXPIRE_HOURS) -> str:
+    """生成 JWT,默认按 .env 中 JWT_EXPIRE_HOURS 过期。"""
+    now = datetime.now(timezone.utc)
+    body = payload.copy()
+    body["iat"] = int(now.timestamp())
+    body["exp"] = int((now + timedelta(hours=expire_hours)).timestamp())
+    return jwt.encode(body, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def decode_access_token(token: str) -> dict:
+    """解析 JWT;过期或签名错误时抛出 jwt 异常。"""
+    return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+
+
+async def current_user(authorization: Optional[str] = Header(None)) -> dict:
+    """FastAPI 依赖:从 Authorization: Bearer <token> 解析当前用户。"""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="缺少或无效的 Authorization 头")
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        return decode_access_token(token)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="登录已过期,请重新登录")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="登录凭证无效")
 
 
 def load_model_config(config_path: str) -> dict:
@@ -153,14 +271,44 @@ async def generate_response(
                 yield f"data: {event.model_dump_json()}\n\n"
 
 
+@app.post("/login", response_model=LoginResponse)
+async def login(request: LoginRequest):
+    result = await verify_login_with_external(request.username, request.password)
+    if not result.get("verification"):
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+    user_info = result["user_info"]
+    agent_access = result.get("agent_access", [])
+    skills_blacklist = result.get("skills_blacklist", [])
+
+    token_payload = {
+        "user_id": user_info["user_id"],
+        "user_name": user_info["user_name"],
+        "department": user_info["department"],
+        "role": user_info["role"],
+        "agent_access": agent_access,
+        "skills_blacklist": skills_blacklist,
+    }
+    token = create_access_token(token_payload)
+
+    return LoginResponse(
+        token=token,
+        token_type="bearer",
+        expires_in=JWT_EXPIRE_HOURS * 3600,
+        user_info=user_info,
+        agent_access=agent_access,
+        skills_blacklist=skills_blacklist,
+    )
+
+
 @app.post("/chat")
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest, user: dict = Depends(current_user)):
     try:
         return StreamingResponse(
             generate_response(
                 messages=request.messages,
                 session_id=request.session_id,
-                user_id=request.user_id
+                user_id=user.get("user_id"),
             ),
             media_type="text/event-stream"
         )
