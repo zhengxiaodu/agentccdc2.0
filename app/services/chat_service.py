@@ -4,7 +4,7 @@ import yaml
 from agentscope.agent import Agent
 from agentscope.model import OpenAIChatModel
 from agentscope.credential import OpenAICredential
-from agentscope.message import UserMsg, AssistantMsg
+from agentscope.message import UserMsg, AssistantMsg, TextBlock, DataBlock
 from agentscope.event import AgentEvent, ReplyStartEvent, ReplyEndEvent
 from agentscope.workspace import LocalWorkspace
 from agentscope.state import AgentState
@@ -107,11 +107,20 @@ async def generate_response(
         content = msg.get("content", "")
 
         if isinstance(content, list):
-            text_content = "\n".join([c.get("text", "") for c in content if isinstance(c, dict)])
+            blocks = []
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                block_type = block.get("type")
+                if block_type == "text":
+                    blocks.append(TextBlock(text=block.get("text", "")))
+                elif block_type == "data":
+                    blocks.append(DataBlock.model_validate(block))
+            user_msg = UserMsg(name="user", content=blocks)
         else:
-            text_content = str(content)
+            user_msg = UserMsg("user", str(content))
 
-        async for event in agent.reply_stream(UserMsg("user", text_content)):
+        async for event in agent.reply_stream(user_msg):
             if isinstance(event, ReplyStartEvent):
                 apply = AssistantMsg(name=event.name, content=[], id=event.reply_id)
             elif isinstance(event, ReplyEndEvent):

@@ -1,8 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
+from typing import Any, Dict
 
 from app.dependencies import current_user
 
 router = APIRouter()
+
+
+def success_response(data: Any) -> Dict[str, Any]:
+    return {"code": 200, "msg": "success", "data": data}
+
+
+def error_response(code: int, msg: str) -> Dict[str, Any]:
+    return {"code": code, "msg": msg, "data": {}}
 
 
 def _get_session_service(request: Request):
@@ -16,7 +25,7 @@ async def list_sessions(
 ):
     service = _get_session_service(request)
     sessions = await service.list_user_sessions(user.get("user_id"), limit=15)
-    return {"sessions": [s.model_dump(mode="json") for s in sessions]}
+    return success_response({"sessions": [s.model_dump(mode="json") for s in sessions]})
 
 
 @router.get("/sessions/{session_id}")
@@ -29,9 +38,9 @@ async def get_session_detail(
     try:
         detail = await service.get_session_detail(session_id, user.get("user_id"))
     except PermissionError:
-        raise HTTPException(status_code=403, detail="会话不属于当前用户")
+        return error_response(403, "会话不属于当前用户")
 
     if detail is None:
-        raise HTTPException(status_code=404, detail="会话不存在")
+        return error_response(404, "会话不存在")
 
-    return detail.model_dump(mode="json")
+    return success_response(detail.model_dump(mode="json"))
