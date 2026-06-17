@@ -13,3 +13,14 @@ JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "8"))
 # Redis 配置
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 REDIS_SESSION_TTL = int(os.getenv("REDIS_SESSION_TTL", "86400"))
+
+# 文件上传配置
+UPLOAD_MAX_SIZE_MB = int(os.getenv("UPLOAD_MAX_SIZE_MB", "10"))
+UPLOAD_ALLOWED_MEDIA_TYPES = [
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "application/pdf",
+    "text/plain",
+]

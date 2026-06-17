@@ -14,7 +14,9 @@
 
 - [ ] Task 3: 实现 /upload 路由
   - 创建 `app/routes/upload.py`
-  - `POST /upload` —— 接收 `session_id`（form）和 `file`（UploadFile），依赖 JWT 校验
+  - `POST /upload` —— 接收 `session_id`（可选 form 字段）和 `file`（UploadFile），依赖 JWT 校验
+  - 无 session_id 时存到 `{workdir}/data/{uuid}_{filename}`
+  - 有 session_id 时存到 `{workdir}/data/{session_id}/{uuid}_{filename}`
   - 校验参数 → 保存文件 → 返回 DataBlock 格式
   - 文件大小/类型校验失败时返回统一错误格式
 

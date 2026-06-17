@@ -7,7 +7,7 @@ from app.config import SKILL_CONFIG_PATH, MODEL_CONFIG_PATH, REDIS_URL
 from app.services.chat_service import load_skills, load_model_config
 from app.dao.session_dao import SessionDAO
 from app.services.session_service import SessionService
-from app.routes import auth, chat, health, sessions
+from app.routes import auth, chat, health, sessions, upload
 
 
 @asynccontextmanager
@@ -40,6 +40,7 @@ app.include_router(auth.router, tags=["auth"])
 app.include_router(chat.router, tags=["chat"])
 app.include_router(health.router, tags=["health"])
 app.include_router(sessions.router, tags=["sessions"])
+app.include_router(upload.router, tags=["upload"])
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
