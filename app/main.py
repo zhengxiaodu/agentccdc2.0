@@ -7,6 +7,7 @@ from app.config import SKILL_CONFIG_PATH, MODEL_CONFIG_PATH, REDIS_URL
 from app.services.chat_service import load_skills, load_model_config
 from app.dao.session_dao import SessionDAO
 from app.services.session_service import SessionService
+from app.services.langfuse_service import LangfuseService
 from app.routes import auth, chat, health, sessions, upload
 
 
@@ -26,6 +27,13 @@ async def lifespan(app: FastAPI):
     app.state.session_dao = SessionDAO(redis_client)
     app.state.session_service = SessionService(app.state.session_dao)
     print(f"Session service initialized (Redis: {REDIS_URL})")
+
+    # 初始化 Langfuse 追踪服务（非强依赖）
+    app.state.langfuse_service = LangfuseService()
+    if app.state.langfuse_service.enabled:
+        print("Langfuse service initialized")
+    else:
+        print("Langfuse service disabled (credentials not configured)")
 
     yield
 
