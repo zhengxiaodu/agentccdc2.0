@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -10,16 +12,32 @@ router = APIRouter()
 
 @router.post("/chat")
 async def chat(request: Request, body: ChatRequest, user: dict = Depends(current_user)):
+    session_service = request.app.state.session_service
+    user_id = user.get("user_id")
+
+    # 获取或创建 session_id
+    session_id = await session_service.get_or_create_session(body.session_id, user_id)
+
+    async def stream():
+        # 先发送 SESSION_READY 事件告知前端 session_id
+        session_event = {
+            "type": "session_ready",
+            "session_id": session_id,
+        }
+        yield f"data: {json.dumps(session_event, ensure_ascii=False)}\n\n"
+
+        # 再发送聊天流式事件
+        async for event in generate_response(
+            toolkit=request.app.state.toolkit,
+            model_config=request.app.state.model_config,
+            messages=body.messages,
+            session_id=session_id,
+            user_id=user_id,
+            session_service=session_service,
+        ):
+            yield event
+
     try:
-        return StreamingResponse(
-            generate_response(
-                toolkit=request.app.state.toolkit,
-                model_config=request.app.state.model_config,
-                messages=body.messages,
-                session_id=body.session_id,
-                user_id=user.get("user_id"),
-            ),
-            media_type="text/event-stream",
-        )
+        return StreamingResponse(stream(), media_type="text/event-stream")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

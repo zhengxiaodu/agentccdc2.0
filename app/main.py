@@ -1,18 +1,37 @@
 import uvicorn
+import redis.asyncio as aioredis
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
-from app.config import SKILL_CONFIG_PATH, MODEL_CONFIG_PATH
+from app.config import SKILL_CONFIG_PATH, MODEL_CONFIG_PATH, REDIS_URL
 from app.services.chat_service import load_skills, load_model_config
-from app.routes import auth, chat, health
+from app.dao.session_dao import SessionDAO
+from app.services.session_service import SessionService
+from app.routes import auth, chat, health, sessions
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 初始化 Skills 和模型配置
     app.state.toolkit = await load_skills(SKILL_CONFIG_PATH)
     app.state.model_config = load_model_config(MODEL_CONFIG_PATH)
     print("Skills & model_cfg loaded successfully")
+
+    # 初始化 Redis 和会话服务
+    redis_client = aioredis.from_url(
+        REDIS_URL,
+        decode_responses=False,
+    )
+    app.state.redis_client = redis_client
+    app.state.session_dao = SessionDAO(redis_client)
+    app.state.session_service = SessionService(app.state.session_dao)
+    print(f"Session service initialized (Redis: {REDIS_URL})")
+
     yield
+
+    # 关闭 Redis 连接
+    await redis_client.close()
+    print("Redis connection closed")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -20,6 +39,7 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(auth.router, tags=["auth"])
 app.include_router(chat.router, tags=["chat"])
 app.include_router(health.router, tags=["health"])
+app.include_router(sessions.router, tags=["sessions"])
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -73,8 +73,9 @@ async def generate_response(
     messages: List[Dict[str, Any]],
     session_id: str = None,
     user_id: str = None,
+    session_service=None,
 ) -> AsyncGenerator[str, None]:
-    """根据消息列表生成流式回复。"""
+    """根据消息列表生成流式回复，集成 session 状态管理。"""
     if not os.getenv("OPENAI_API_KEY"):
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY not set")
 
@@ -82,16 +83,23 @@ async def generate_response(
     agent_cfg = model_config.get("agent", {})
     model = create_model_from_config(model_cfg)
 
+    # 从 Redis 恢复 AgentState（若存在）
+    agent_state = AgentState(
+        session_id=session_id,
+        permission_context=PermissionContext(mode=PermissionMode.BYPASS),
+    )
+    if session_service and session_id:
+        loaded = await session_service.load_agent_state(session_id)
+        if loaded:
+            # 用加载的状态重建 AgentState（会覆盖 session_id, context, summary 等）
+            agent_state = AgentState(**loaded)
+
     agent = Agent(
         name=agent_cfg.get("name", "AI问答助手"),
         system_prompt=agent_cfg.get("system_prompt", ""),
         model=model,
         toolkit=toolkit,
-        state=AgentState(
-            permission_context=PermissionContext(
-                mode=PermissionMode.BYPASS,
-            )
-        ),
+        state=agent_state,
     )
 
     apply = None
@@ -112,3 +120,8 @@ async def generate_response(
             if isinstance(event, AgentEvent):
                 apply.append_event(event)
                 yield f"data: {event.model_dump_json()}\n\n"
+
+    # 流结束后持久化状态
+    if session_service and session_id and user_id:
+        state_data = agent.state.model_dump(mode="json")
+        await session_service.save_agent_state(session_id, user_id, state_data)
