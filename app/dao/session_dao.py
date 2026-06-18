@@ -50,14 +50,26 @@ class SessionDAO:
         if existed:
             existed_meta = json.loads(existed)
             created_at = existed_meta.get("created_at", now_str)
+            name = existed_meta.get("name", "")
+            latest_trace_id = existed_meta.get("latest_trace_id", "")
         else:
             created_at = now_str
+            latest_trace_id = ""
+            # 从首条用户消息提取会话名称
+            name = ""
+            for msg in current_msgs:
+                if msg.get("role") == "user":
+                    raw_text = msg.get("content", "")
+                    name = raw_text[:50] if len(raw_text) > 50 else raw_text
+                    break
 
         meta = {
             "user_id": user_id,
+            "name": name,
             "created_at": created_at,
             "updated_at": now_str,
             "message_count": message_count,
+            "latest_trace_id": latest_trace_id,
         }
 
         await self.redis.setex(self._meta_key(session_id), self.ttl, json.dumps(meta, ensure_ascii=False))
@@ -74,6 +86,18 @@ class SessionDAO:
         return json.loads(raw)
 
     # ---- Session meta ----
+
+    async def save_latest_trace_id(self, session_id: str, trace_id: str) -> None:
+        """保存最新的 trace_id 到会话元信息。"""
+        meta_raw = await self.redis.get(self._meta_key(session_id))
+        if meta_raw:
+            meta = json.loads(meta_raw)
+            meta["latest_trace_id"] = trace_id
+            await self.redis.setex(
+                self._meta_key(session_id),
+                self.ttl,
+                json.dumps(meta, ensure_ascii=False),
+            )
 
     async def session_exists(self, session_id: str) -> bool:
         """检查 session 是否存在。"""

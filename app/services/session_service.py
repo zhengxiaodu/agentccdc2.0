@@ -27,6 +27,10 @@ class SessionService:
         """将 AgentState dict 持久化到 Redis。"""
         await self.dao.save_agent_state(session_id, user_id, state_dict)
 
+    async def save_latest_trace_id(self, session_id: str, trace_id: str) -> None:
+        """将最新 trace_id 保存到会话元信息。"""
+        await self.dao.save_latest_trace_id(session_id, trace_id)
+
     async def list_user_sessions(self, user_id: str, limit: int = 15) -> list[SessionMeta]:
         """列出用户最近会话。"""
         raw_list = await self.dao.list_user_sessions(user_id, limit=limit)
@@ -54,5 +58,6 @@ class SessionService:
             session_id=session_id,
             created_at=meta.get("created_at", ""),
             updated_at=meta.get("updated_at", ""),
+            trace_id=meta.get("latest_trace_id"),
             messages=messages,
         )

@@ -180,3 +180,7 @@ async def generate_response(
 
     trace_event = json.dumps({"type": "trace_ready", "trace_id": trace_id})
     yield f"data: {trace_event}\n\n"
+
+    # 保存 trace_id 到 Redis 元信息
+    if session_service and session_id and trace_id:
+        await session_service.save_latest_trace_id(session_id, trace_id)
