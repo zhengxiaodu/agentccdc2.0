@@ -1,3 +1,4 @@
+import json
 import os
 import yaml
 
@@ -12,6 +13,7 @@ from agentscope.permission import PermissionContext, PermissionMode
 from agentscope.tool import Toolkit
 
 from app.config import SKILL_CONFIG_PATH, MODEL_CONFIG_PATH
+from app.services.langfuse_service import LangfuseService
 from fastapi import HTTPException
 from typing import List, Dict, Any, AsyncGenerator
 
@@ -74,8 +76,9 @@ async def generate_response(
     session_id: str = None,
     user_id: str = None,
     session_service=None,
+    langfuse_service: LangfuseService = None,
 ) -> AsyncGenerator[str, None]:
-    """根据消息列表生成流式回复，集成 session 状态管理。"""
+    """根据消息列表生成流式回复，集成 session 状态管理和 Langfuse 追踪。"""
     if not os.getenv("OPENAI_API_KEY"):
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY not set")
 
@@ -101,6 +104,19 @@ async def generate_response(
         toolkit=toolkit,
         state=agent_state,
     )
+
+    # 创建 Langfuse trace（若已启用）
+    trace = None
+    if langfuse_service and langfuse_service.enabled:
+        trace = langfuse_service.create_trace(
+            session_id=session_id,
+            user_id=user_id,
+            input={
+                "messages": messages,
+                "session_id": session_id,
+                "user_id": user_id,
+            },
+        )
 
     apply = None
     for msg in messages:
@@ -134,3 +150,33 @@ async def generate_response(
     if session_service and session_id and user_id:
         state_data = agent.state.model_dump(mode="json")
         await session_service.save_agent_state(session_id, user_id, state_data)
+
+    # 更新 Langfuse trace 并发送 TRACE_READY 事件
+    if trace and langfuse_service:
+        try:
+            tool_calls = []
+            if apply:
+                for block in apply.content:
+                    if block.type == "tool_call":
+                        tool_calls.append({
+                            "name": block.name,
+                            "input": block.input,
+                            "state": str(block.state),
+                        })
+
+            trace_output = {
+                "reply": apply.model_dump(mode="json") if apply else None,
+                "tool_calls": tool_calls,
+                "token_usage": apply.usage.model_dump() if apply and apply.usage else None,
+            }
+            langfuse_service.update_trace(trace, output=trace_output)
+            langfuse_service.flush()
+        except Exception:
+            pass
+
+        trace_id = str(trace.id) if trace.id else None
+    else:
+        trace_id = None
+
+    trace_event = json.dumps({"type": "trace_ready", "trace_id": trace_id})
+    yield f"data: {trace_event}\n\n"

@@ -24,3 +24,8 @@ UPLOAD_ALLOWED_MEDIA_TYPES = [
     "application/pdf",
     "text/plain",
 ]
+
+# Langfuse 可观测性配置
+LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY", "")
+LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY", "")
+LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", "https://us.cloud.langfuse.com")
