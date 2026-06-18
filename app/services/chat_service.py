@@ -105,12 +105,12 @@ async def generate_response(
         state=agent_state,
     )
 
-    # 创建 Langfuse trace（若已启用）
-    trace = None
+    # 创建 Langfuse observation（若已启用）
+    obs = None
     if langfuse_service and langfuse_service.enabled:
-        trace = langfuse_service.create_trace(
-            session_id=session_id,
-            user_id=user_id,
+        obs = langfuse_service.start_observation(
+            name="chat-response",
+            as_type="span",
             input={
                 "messages": messages,
                 "session_id": session_id,
@@ -151,8 +151,8 @@ async def generate_response(
         state_data = agent.state.model_dump(mode="json")
         await session_service.save_agent_state(session_id, user_id, state_data)
 
-    # 更新 Langfuse trace 并发送 TRACE_READY 事件
-    if trace and langfuse_service:
+    # 更新 Langfuse observation 并发送 TRACE_READY 事件
+    if obs and langfuse_service:
         try:
             tool_calls = []
             if apply:
@@ -169,12 +169,12 @@ async def generate_response(
                 "tool_calls": tool_calls,
                 "token_usage": apply.usage.model_dump() if apply and apply.usage else None,
             }
-            langfuse_service.update_trace(trace, output=trace_output)
+            langfuse_service.end_observation(obs, output=trace_output)
             langfuse_service.flush()
         except Exception:
             pass
 
-        trace_id = str(trace.id) if trace.id else None
+        trace_id = obs.trace_id if obs else None
     else:
         trace_id = None
 
