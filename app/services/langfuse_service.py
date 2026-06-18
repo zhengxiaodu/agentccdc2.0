@@ -32,39 +32,36 @@ class LangfuseService:
     def enabled(self) -> bool:
         return self._enabled
 
-    def create_trace(
+    def start_observation(
         self,
         name: str = "chat-response",
-        session_id: Optional[str] = None,
-        user_id: Optional[str] = None,
+        as_type: str = "span",
         input: Any = None,
-    ):
+    ) -> Optional[Any]:
         if not self._enabled or not self._client:
             return None
         try:
-            return self._client.trace(
+            return self._client.start_observation(
                 name=name,
-                session_id=session_id,
-                user_id=user_id,
+                as_type=as_type,
                 input=input,
             )
         except Exception as e:
-            logger.warning("Langfuse create_trace failed: %s", e)
-            self._enabled = False
+            logger.warning("Langfuse start_observation failed: %s", e)
             return None
 
-    def update_trace(
+    def end_observation(
         self,
-        trace,
+        observation,
         output: Any = None,
-        input: Any = None,
     ) -> None:
-        if not self._enabled or not trace:
+        if not self._enabled or not observation:
             return
         try:
-            trace.update(output=output, input=input)
+            observation.update(output=output)
+            observation.end()
         except Exception as e:
-            logger.warning("Langfuse update_trace failed: %s", e)
+            logger.warning("Langfuse end_observation failed: %s", e)
 
     def flush(self) -> None:
         if not self._enabled or not self._client:

@@ -12,6 +12,7 @@ class SessionMessage(BaseModel):
 class SessionMeta(BaseModel):
     session_id: str
     user_id: str
+    name: str = ""
     created_at: str
     updated_at: str
     message_count: int
@@ -25,4 +26,5 @@ class SessionDetailResponse(BaseModel):
     session_id: str
     created_at: str
     updated_at: str
+    trace_id: Optional[str] = None
     messages: List[SessionMessage]
