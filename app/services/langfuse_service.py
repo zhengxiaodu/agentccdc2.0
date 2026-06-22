@@ -70,3 +70,25 @@ class LangfuseService:
             self._client.flush()
         except Exception as e:
             logger.warning("Langfuse flush failed: %s", e)
+
+    def create_score(
+        self,
+        trace_id: str,
+        name: str = "user_feedback",
+        value: bool = True,
+        comment: Optional[str] = None,
+    ) -> bool:
+        if not self._enabled or not self._client:
+            return False
+        try:
+            self._client.create_score(
+                name=name,
+                value=1.0 if value else 0.0,
+                trace_id=trace_id,
+                data_type="BOOLEAN",
+                comment=comment,
+            )
+            return True
+        except Exception as e:
+            logger.warning("Langfuse create_score failed: %s", e)
+            return False
