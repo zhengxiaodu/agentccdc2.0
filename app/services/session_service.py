@@ -31,10 +31,25 @@ class SessionService:
         """将最新 trace_id 保存到会话元信息。"""
         await self.dao.save_latest_trace_id(session_id, trace_id)
 
-    async def list_user_sessions(self, user_id: str, limit: int = 15) -> list[SessionMeta]:
-        """列出用户最近会话。"""
-        raw_list = await self.dao.list_user_sessions(user_id, limit=limit)
-        return [SessionMeta(**m) for m in raw_list]
+    async def pin_session(self, user_id: str, session_id: str) -> None:
+        """置顶会话。"""
+        await self.dao.pin_session(user_id, session_id)
+
+    async def unpin_session(self, user_id: str, session_id: str) -> None:
+        """取消置顶会话。"""
+        await self.dao.unpin_session(user_id, session_id)
+
+    async def delete_session(self, user_id: str, session_id: str) -> bool:
+        """删除会话。返回 False 表示会话不存在。"""
+        if not await self.dao.session_exists(session_id):
+            return False
+        await self.dao.delete_session(session_id, user_id)
+        return True
+
+    async def list_user_sessions(self, user_id: str, limit: int = 15) -> tuple[list[SessionMeta], list[SessionMeta]]:
+        """列出用户会话，返回 (top_sessions, sessions)。"""
+        raw_top, raw_list = await self.dao.list_user_sessions(user_id, limit=limit)
+        return [SessionMeta(**m) for m in raw_top], [SessionMeta(**m) for m in raw_list]
 
     async def get_session_detail(
         self, session_id: str, user_id: str
