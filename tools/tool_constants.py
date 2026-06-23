@@ -22,9 +22,6 @@ RENDER_INDICATOR_TABLE = "render_indicator_table"
 # 指标卡渲染工具
 RENDER_METRIC_CARD = "render_metric_card"
 
-# 成交量柱状图渲染工具
-RENDER_VOLUME_CHART = "render_volume_chart"
-
 
 # ===================== 个性化卡片渲染工具 =====================
 

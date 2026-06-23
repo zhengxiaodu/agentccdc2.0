@@ -2,3 +2,5 @@ skills:
   - name: bocha_search
     directory: ./skills/bocha_search
     description: "使用博查搜索引擎获取网上的知识和最新信息。适用于查询新闻、科技资讯、天气预报、股票行情等需要实时数据的场景。"
+  - directory: ./skills/chart_renderer
+  - directory: ./skills/card_interaction

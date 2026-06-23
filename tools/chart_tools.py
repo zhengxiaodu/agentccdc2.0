@@ -16,14 +16,14 @@ from typing import Any, Dict, List, Optional
 
 from agentscope.tool import ToolResponse
 from agentscope.message import TextBlock
+from agentscope.tools import tool
 
-from .tool_constants import (
+from tools.tool_constants import (
     RENDER_LINE_CHART,
     RENDER_BAR_CHART,
     RENDER_PIE_CHART,
     RENDER_INDICATOR_TABLE,
     RENDER_METRIC_CARD,
-    RENDER_VOLUME_CHART,
     RENDER_GENERIC_CARD,
     RENDER_SELECTABLE_LIST,
     RENDER_CONFIRM_ACTION,
@@ -72,6 +72,7 @@ def _build_result(component: Dict[str, Any]) -> str:
 #  图表渲染工具
 # =====================================================================
 
+@tool
 def render_line_chart(raw_input: Any = None, **kwargs) -> ToolResponse:
     """
     折线图渲染工具 - 用于展示时间序列数据、趋势变化
@@ -127,6 +128,7 @@ def render_line_chart(raw_input: Any = None, **kwargs) -> ToolResponse:
         return ToolResponse(content=[TextBlock(type="text", text=json.dumps({"error": str(e)}))])
 
 
+@tool
 def render_bar_chart(raw_input: Any = None, **kwargs) -> ToolResponse:
     """
     柱状图渲染工具 - 用于分类数据对比
@@ -166,6 +168,7 @@ def render_bar_chart(raw_input: Any = None, **kwargs) -> ToolResponse:
         return ToolResponse(content=[TextBlock(type="text", text=json.dumps({"error": str(e)}))])
 
 
+@tool
 def render_pie_chart(raw_input: Any = None, **kwargs) -> ToolResponse:
     """
     饼图渲染工具 - 用于展示占比分布
@@ -200,6 +203,7 @@ def render_pie_chart(raw_input: Any = None, **kwargs) -> ToolResponse:
         return ToolResponse(content=[TextBlock(type="text", text=json.dumps({"error": str(e)}))])
 
 
+@tool
 def render_indicator_table(raw_input: Any = None, **kwargs) -> ToolResponse:
     """
     指标表格渲染工具 - 用于展示技术指标数据
@@ -236,6 +240,7 @@ def render_indicator_table(raw_input: Any = None, **kwargs) -> ToolResponse:
         return ToolResponse(content=[TextBlock(type="text", text=json.dumps({"error": str(e)}))])
 
 
+@tool
 def render_metric_card(raw_input: Any = None, **kwargs) -> ToolResponse:
     """
     指标卡渲染工具 - 用于展示股票核心指标
@@ -273,51 +278,11 @@ def render_metric_card(raw_input: Any = None, **kwargs) -> ToolResponse:
         return ToolResponse(content=[TextBlock(type="text", text=json.dumps({"error": str(e)}))])
 
 
-def render_volume_chart(raw_input: Any = None, **kwargs) -> ToolResponse:
-    """
-    成交量柱状图渲染工具 - 按日期展示成交量, 支持涨跌颜色区分
-
-    参数 (input dict):
-        stock_name (str, required): 股票名称
-        dates (list, required): 日期数组
-        volumes (list, required): 成交量数组
-        colors (list, required): 涨跌颜色数组
-        stock_code (str, optional): 股票代码
-
-    重要: 必须先调用 MCP 工具获取数据，再调用此工具渲染图表！
-    """
-    logger.info(f"[{RENDER_VOLUME_CHART}] 收到渲染请求")
-    try:
-        inp = _extract_input(raw_input, kwargs)
-
-        # 获取数据（不再强制校验，允许空数据）
-        dates = inp.get("dates")
-        volumes = inp.get("volumes")
-        if not dates or not isinstance(dates, list) or len(dates) == 0:
-            logger.warning(f"[{RENDER_VOLUME_CHART}] dates 为空，将渲染空图表")
-            dates = []
-        if not volumes or not isinstance(volumes, list) or len(volumes) == 0:
-            logger.warning(f"[{RENDER_VOLUME_CHART}] volumes 为空，将渲染空图表")
-            volumes = []
-
-        component = {
-            "type": "volume_chart",
-            "stock_name": inp.get("stock_name"),
-            "stock_code": inp.get("stock_code", ""),
-            "dates": dates,
-            "volumes": volumes,
-            "colors": inp.get("colors"),
-        }
-        return ToolResponse(content=[TextBlock(type="text", text=_build_result(component))])
-    except Exception as e:
-        logger.error(f"[{RENDER_VOLUME_CHART}] 处理失败: {e}")
-        return ToolResponse(content=[TextBlock(type="text", text=json.dumps({"error": str(e)}))])
-
-
 # =====================================================================
 #  通用卡片渲染工具
 # =====================================================================
 
+@tool
 def render_generic_card(raw_input: Any = None, **kwargs) -> ToolResponse:
     """
     通用卡片渲染工具 - 接收 cardType + schema, 前端根据 cardType 取缓存模板渲染
@@ -356,6 +321,7 @@ def render_generic_card(raw_input: Any = None, **kwargs) -> ToolResponse:
 #  个性化卡片渲染工具
 # =====================================================================
 
+@tool
 def render_selectable_list(raw_input: Any = None, **kwargs) -> ToolResponse:
     """
     可选列表渲染工具 - 展示可交互列表供用户选择
@@ -386,6 +352,7 @@ def render_selectable_list(raw_input: Any = None, **kwargs) -> ToolResponse:
         return ToolResponse(content=[TextBlock(type="text", text=json.dumps({"error": str(e)}))])
 
 
+@tool
 def render_confirm_action(raw_input: Any = None, **kwargs) -> ToolResponse:
     """
     确认操作渲染工具 - 展示需用户二次确认的操作卡片
@@ -428,7 +395,6 @@ CHART_TOOL_REGISTRY: Dict[str, callable] = {
     RENDER_PIE_CHART: render_pie_chart,
     RENDER_INDICATOR_TABLE: render_indicator_table,
     RENDER_METRIC_CARD: render_metric_card,
-    RENDER_VOLUME_CHART: render_volume_chart,
     RENDER_GENERIC_CARD: render_generic_card,
     RENDER_SELECTABLE_LIST: render_selectable_list,
     RENDER_CONFIRM_ACTION: render_confirm_action,
@@ -530,21 +496,6 @@ def get_chart_tool_definitions() -> List[Dict[str, Any]]:
                     "rating": {"type": "string", "description": "评级"},
                 },
                 "required": ["stock_name", "current_price", "change_pct"],
-            },
-        },
-        {
-            "name": RENDER_VOLUME_CHART,
-            "description": "渲染股票成交量柱状图，按日期展示每日成交量，绿色代表上涨日，红色代表下跌日。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "stock_name": {"type": "string", "description": "股票名称"},
-                    "stock_code": {"type": "string", "description": "股票代码"},
-                    "dates": {"type": "array", "description": "日期标签数组", "items": {"type": "string"}},
-                    "volumes": {"type": "array", "description": "成交量数组", "items": {"type": "number"}},
-                    "colors": {"type": "array", "description": "涨跌颜色数组", "items": {"type": "string"}},
-                },
-                "required": ["stock_name", "dates", "volumes", "colors"],
             },
         },
         {

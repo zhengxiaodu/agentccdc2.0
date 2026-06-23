@@ -14,7 +14,8 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from .tool_constants import GET_CARD_CONFIG, GET_CUSTOM_COMPONENT_CONFIG
+from tools.tool_constants import GET_CARD_CONFIG, GET_CUSTOM_COMPONENT_CONFIG
+from agentscope.tools import tool
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ def _build_result(data: Dict[str, Any]) -> str:
 #  通用卡片配置查询工具
 # =====================================================================
 
+@tool
 def get_card_config(raw_input: Any) -> str:
     """
     查询通用卡片组件的配置信息。
@@ -160,6 +162,7 @@ def _fetch_single_card(app_id: str, card_type: str) -> str:
 #  个性化组件配置查询工具
 # =====================================================================
 
+@tool
 def get_custom_component_config(raw_input: Any) -> str:
     """
     查询 mng 个性化组件配置工具（返回 renderTemplate + configJson）
