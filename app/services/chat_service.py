@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import yaml
 
@@ -16,6 +17,8 @@ from app.config import SKILL_CONFIG_PATH, MODEL_CONFIG_PATH
 from app.services.langfuse_service import LangfuseService
 from fastapi import HTTPException
 from typing import List, Dict, Any, AsyncGenerator
+
+logger = logging.getLogger(__name__)
 
 
 def load_model_config(config_path: str = MODEL_CONFIG_PATH) -> dict:
@@ -145,6 +148,27 @@ async def generate_response(
             if isinstance(event, AgentEvent):
                 apply.append_event(event)
                 yield f"data: {event.model_dump_json()}\n\n"
+
+                # 检测工具执行结果并发射 CUSTOM_COMPONENT 事件
+                if event.type == "tool_call_end":
+                    try:
+                        # 从 event.content 中提取工具结果的 JSON 内容
+                        for block in (event.content or []):
+                            if hasattr(block, 'type') and block.type == 'text':
+                                text = block.text if hasattr(block, 'text') else str(block)
+                                try:
+                                    data = json.loads(text)
+                                    component_types = {"chart", "volume_chart", "selectable_list", "confirm_action"}
+                                    if isinstance(data, dict) and data.get("type") in component_types:
+                                        component_event = {
+                                            "type": "custom_component",
+                                            "component": data,
+                                        }
+                                        yield f"data: {json.dumps(component_event, ensure_ascii=False)}\n\n"
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
+                    except Exception:
+                        logger.exception("处理 CUSTOM_COMPONENT 事件出错")
 
     # 流结束后持久化状态
     if session_service and session_id and user_id:

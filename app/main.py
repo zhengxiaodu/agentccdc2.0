@@ -8,7 +8,7 @@ from app.services.chat_service import load_skills, load_model_config
 from app.dao.session_dao import SessionDAO
 from app.services.session_service import SessionService
 from app.services.langfuse_service import LangfuseService
-from app.routes import auth, chat, feedback, health, sessions, upload
+from app.routes import auth, chat, feedback, health, mng_proxy, sessions, upload
 
 
 @asynccontextmanager
@@ -50,6 +50,7 @@ app.include_router(feedback.router, tags=["feedback"])
 app.include_router(health.router, tags=["health"])
 app.include_router(sessions.router, tags=["sessions"])
 app.include_router(upload.router, tags=["upload"])
+app.include_router(mng_proxy.router, tags=["mng"])
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
