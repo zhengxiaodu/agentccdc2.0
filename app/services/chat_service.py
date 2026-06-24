@@ -150,23 +150,38 @@ async def generate_response(
                 yield f"data: {event.model_dump_json()}\n\n"
 
                 # 检测工具执行结果并发射 CUSTOM_COMPONENT 事件
-                if event.type == "tool_call_end":
+                # 实际事件类型为 TOOL_RESULT_TEXT_DELTA，数据在 delta 字段中
+                if event.type == "TOOL_RESULT_TEXT_DELTA":
                     try:
-                        # 从 event.content 中提取工具结果的 JSON 内容
-                        for block in (event.content or []):
-                            if hasattr(block, 'type') and block.type == 'text':
-                                text = block.text if hasattr(block, 'text') else str(block)
-                                try:
-                                    data = json.loads(text)
-                                    component_types = {"chart", "volume_chart", "selectable_list", "confirm_action"}
-                                    if isinstance(data, dict) and data.get("type") in component_types:
-                                        component_event = {
-                                            "type": "custom_component",
-                                            "component": data,
-                                        }
-                                        yield f"data: {json.dumps(component_event, ensure_ascii=False)}\n\n"
-                                except (json.JSONDecodeError, TypeError):
-                                    pass
+                        delta = getattr(event, 'delta', '')
+                        if delta:
+                            component_types = {"chart", "volume_chart", "selectable_list", "confirm_action"}
+                            # 通过花括号匹配提取 JSON 对象（处理嵌套 data 数组）
+                            i = 0
+                            while i < len(delta):
+                                if delta[i] == '{':
+                                    depth = 1
+                                    j = i + 1
+                                    while j < len(delta) and depth > 0:
+                                        if delta[j] == '{':
+                                            depth += 1
+                                        elif delta[j] == '}':
+                                            depth -= 1
+                                        j += 1
+                                    if depth == 0:
+                                        try:
+                                            data = json.loads(delta[i:j])
+                                            if isinstance(data, dict) and data.get("type") in component_types:
+                                                component_event = {
+                                                    "type": "custom_component",
+                                                    "component": data,
+                                                }
+                                                yield f"data: {json.dumps(component_event, ensure_ascii=False)}\n\n"
+                                        except json.JSONDecodeError:
+                                            pass
+                                    i = j
+                                else:
+                                    i += 1
                     except Exception:
                         logger.exception("处理 CUSTOM_COMPONENT 事件出错")
 
